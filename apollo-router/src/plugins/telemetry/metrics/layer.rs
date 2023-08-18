@@ -91,7 +91,7 @@ impl Instruments {
                     &self.u64_counter,
                     metric_name,
                     || meter.u64_counter(metric_name).init(),
-                    |ctr| ctr.add(cx, value, custom_attributes),
+                    |ctr| ctr.add(value, custom_attributes),
                 );
             }
             InstrumentType::CounterF64(value) => {
@@ -99,7 +99,7 @@ impl Instruments {
                     &self.f64_counter,
                     metric_name,
                     || meter.f64_counter(metric_name).init(),
-                    |ctr| ctr.add(cx, value, custom_attributes),
+                    |ctr| ctr.add(value, custom_attributes),
                 );
             }
             InstrumentType::UpDownCounterI64(value) => {
@@ -107,7 +107,7 @@ impl Instruments {
                     &self.i64_up_down_counter,
                     metric_name,
                     || meter.i64_up_down_counter(metric_name).init(),
-                    |ctr| ctr.add(cx, value, custom_attributes),
+                    |ctr| ctr.add(value, custom_attributes),
                 );
             }
             InstrumentType::UpDownCounterF64(value) => {
@@ -115,7 +115,7 @@ impl Instruments {
                     &self.f64_up_down_counter,
                     metric_name,
                     || meter.f64_up_down_counter(metric_name).init(),
-                    |ctr| ctr.add(cx, value, custom_attributes),
+                    |ctr| ctr.add(value, custom_attributes),
                 );
             }
             InstrumentType::HistogramU64(value) => {
@@ -123,7 +123,7 @@ impl Instruments {
                     &self.u64_histogram,
                     metric_name,
                     || meter.u64_histogram(metric_name).init(),
-                    |rec| rec.record(cx, value, custom_attributes),
+                    |rec| rec.record(value, custom_attributes),
                 );
             }
             InstrumentType::HistogramI64(value) => {
@@ -131,7 +131,7 @@ impl Instruments {
                     &self.i64_histogram,
                     metric_name,
                     || meter.i64_histogram(metric_name).init(),
-                    |rec| rec.record(cx, value, custom_attributes),
+                    |rec| rec.record(value, custom_attributes),
                 );
             }
             InstrumentType::HistogramF64(value) => {
@@ -139,7 +139,7 @@ impl Instruments {
                     &self.f64_histogram,
                     metric_name,
                     || meter.f64_histogram(metric_name).init(),
-                    |rec| rec.record(cx, value, custom_attributes),
+                    |rec| rec.record(value, custom_attributes),
                 );
             }
             InstrumentType::GaugeU64(value) => {
@@ -147,7 +147,7 @@ impl Instruments {
                     &self.u64_gauge,
                     metric_name,
                     || meter.u64_observable_gauge(metric_name).init(),
-                    |gauge| gauge.observe(cx, value, custom_attributes),
+                    |gauge| gauge.observe(value, custom_attributes),
                 );
             }
         };

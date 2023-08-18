@@ -1,5 +1,3 @@
-use opentelemetry::sdk::export::metrics::aggregation;
-use opentelemetry::sdk::metrics::selectors;
 use opentelemetry::sdk::Resource;
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::HttpExporterBuilder;
@@ -7,9 +5,8 @@ use opentelemetry_otlp::TonicExporterBuilder;
 use tower::BoxError;
 
 use crate::plugins::telemetry::config::MetricsCommon;
-use crate::plugins::telemetry::metrics::MetricsBuilder;
 use crate::plugins::telemetry::metrics::MetricsConfigurator;
-use crate::plugins::telemetry::otlp::Temporality;
+use crate::plugins::telemetry::metrics::{CustomAggregationSelector, MetricsBuilder};
 
 // TODO Remove MetricExporterBuilder once upstream issue is fixed
 // This has to exist because Http is not currently supported for metrics export
@@ -42,40 +39,26 @@ impl MetricsConfigurator for super::super::otlp::Config {
 
         match exporter.exporter {
             Some(exporter) => {
-                let exporter = match self.temporality {
-                    Temporality::Cumulative => opentelemetry_otlp::new_pipeline()
-                        .metrics(
-                            selectors::simple::histogram(metrics_config.buckets.clone()),
-                            aggregation::stateless_temporality_selector(),
-                            opentelemetry::runtime::Tokio,
-                        )
-                        .with_exporter(exporter)
-                        .with_resource(Resource::new(
-                            metrics_config
-                                .resources
-                                .clone()
-                                .into_iter()
-                                .map(|(k, v)| KeyValue::new(k, v)),
-                        ))
-                        .build()?,
-                    Temporality::Delta => opentelemetry_otlp::new_pipeline()
-                        .metrics(
-                            selectors::simple::histogram(metrics_config.buckets.clone()),
-                            aggregation::delta_temporality_selector(),
-                            opentelemetry::runtime::Tokio,
-                        )
-                        .with_exporter(exporter)
-                        .with_resource(Resource::new(
-                            metrics_config
-                                .resources
-                                .clone()
-                                .into_iter()
-                                .map(|(k, v)| KeyValue::new(k, v)),
-                        ))
-                        .build()?,
-                };
-                builder = builder.with_meter_provider(exporter.clone());
-                builder = builder.with_exporter(exporter);
+                let exporter = opentelemetry_otlp::new_pipeline()
+                    .metrics(opentelemetry::runtime::Tokio)
+                    .with_aggregation_selector(
+                        CustomAggregationSelector::builder()
+                            .boundaries(metrics_config.buckets.clone())
+                            .record_min_max(true)
+                            .build(),
+                    )
+                    .with_temporality_selector((&self.temporality).into())
+                    .with_exporter(exporter)
+                    .with_resource(Resource::new(
+                        metrics_config
+                            .resources
+                            .clone()
+                            .into_iter()
+                            .map(|(k, v)| KeyValue::new(k, v)),
+                    ))
+                    .build()?;
+
+                builder = builder.with_push_exporter(exporter);
                 Ok(builder)
             }
             None => Err("otlp metric export does not support http yet".into()),

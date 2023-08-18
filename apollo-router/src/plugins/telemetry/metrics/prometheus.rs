@@ -5,11 +5,6 @@ use std::task::Poll;
 use futures::future::BoxFuture;
 use http::StatusCode;
 use once_cell::sync::Lazy;
-use opentelemetry::sdk::export::metrics::aggregation;
-use opentelemetry::sdk::metrics::controllers;
-use opentelemetry::sdk::metrics::controllers::BasicController;
-use opentelemetry::sdk::metrics::processors;
-use opentelemetry::sdk::metrics::selectors;
 use opentelemetry::sdk::Resource;
 use opentelemetry::KeyValue;
 use prometheus::Encoder;
@@ -22,8 +17,8 @@ use tower::ServiceExt;
 use tower_service::Service;
 
 use crate::plugins::telemetry::config::MetricsCommon;
-use crate::plugins::telemetry::metrics::MetricsBuilder;
 use crate::plugins::telemetry::metrics::MetricsConfigurator;
+use crate::plugins::telemetry::metrics::{CustomAggregationSelector, MetricsBuilder};
 use crate::router_factory::Endpoint;
 use crate::services::router;
 use crate::ListenAddr;
@@ -61,18 +56,15 @@ impl Default for Config {
 }
 
 // Prometheus metrics are special. We want them to persist between restarts if possible.
-// This means reusing the existing controller if we can.
-// These statics will keep track of new controllers for commit when the telemetry plugin is activated.
-static CONTROLLER: Lazy<Mutex<Option<BasicController>>> = Lazy::new(Default::default);
-static NEW_CONTROLLER: Lazy<Mutex<Option<BasicController>>> = Lazy::new(Default::default);
+// This means reusing the existing registry if we can.
+// These statics will keep track of new registry for commit when the telemetry plugin is activated.
+static REGISTRY: Lazy<Mutex<Option<(Resource, Registry)>>> = Lazy::new(Default::default);
+static NEW_REGISTRY: Lazy<Mutex<Option<(Resource, Registry)>>> = Lazy::new(Default::default);
 
 pub(crate) fn commit_new_controller() {
-    if let Some(controller) = NEW_CONTROLLER.lock().expect("lock poisoned").take() {
-        tracing::debug!("committing prometheus controller");
-        CONTROLLER
-            .lock()
-            .expect("lock poisoned")
-            .replace(controller);
+    if let Some(registry) = NEW_REGISTRY.lock().expect("lock poisoned").take() {
+        tracing::debug!("committing prometheus registry");
+        REGISTRY.lock().expect("lock poisoned").replace(registry);
     }
 }
 
@@ -83,35 +75,39 @@ impl MetricsConfigurator for Config {
         metrics_config: &MetricsCommon,
     ) -> Result<MetricsBuilder, BoxError> {
         if self.enabled {
-            let mut controller = controllers::basic(processors::factory(
-                selectors::simple::histogram(metrics_config.buckets.clone()),
-                aggregation::stateless_temporality_selector(),
-            ))
-            .with_resource(Resource::new(
+            let resource = Resource::new(
                 metrics_config
                     .resources
                     .clone()
                     .into_iter()
                     .map(|(k, v)| KeyValue::new(k, v)),
-            ))
-            .build();
+            );
 
-            // Check the last controller to see if the resources are the same, if they are we can use it as is.
+            let mut registry = prometheus::Registry::new();
+            // Check the last registry to see if the resources are the same, if they are we can use it as is.
             // Otherwise go with the new controller and store it so that it can be committed during telemetry activation.
-            if let Some(last_controller) = CONTROLLER.lock().expect("lock poisoned").clone() {
-                if controller.resource() == last_controller.resource() {
-                    tracing::debug!("prometheus controller can be reused");
-                    controller = last_controller
+            if let Some(last_registry) = REGISTRY.lock().expect("lock poisoned").clone() {
+                if resource == last_registry.0 {
+                    tracing::debug!("prometheus registry can be reused");
+                    registry = last_registry.1.clone();
                 } else {
-                    tracing::debug!("prometheus controller cannot be reused");
+                    tracing::debug!("prometheus registry cannot be reused");
                 }
             }
-            NEW_CONTROLLER
+            NEW_REGISTRY
                 .lock()
                 .expect("lock poisoned")
-                .replace(controller.clone());
+                .replace((resource.clone(), registry.clone()));
 
-            let exporter = opentelemetry_prometheus::exporter(controller).try_init()?;
+            let exporter = opentelemetry_prometheus::exporter()
+                .with_aggregation_selector(
+                    CustomAggregationSelector::builder()
+                        .boundaries(metrics_config.buckets.clone())
+                        .record_min_max(true)
+                        .build(),
+                )
+                .with_registry(registry)
+                .build();
 
             builder = builder.with_custom_endpoint(
                 self.listen.clone(),
@@ -123,8 +119,7 @@ impl MetricsConfigurator for Config {
                     .boxed(),
                 ),
             );
-            builder = builder.with_meter_provider(exporter.meter_provider()?);
-            builder = builder.with_exporter(exporter);
+            builder = builder.with_push_exporter(exporter);
             tracing::info!(
                 "Prometheus endpoint exposed at {}{}",
                 self.listen,

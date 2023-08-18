@@ -50,7 +50,12 @@ static FMT_LAYER_HANDLE: OnceCell<
 
 pub(crate) fn init_telemetry(log_level: &str) -> Result<()> {
     let hot_tracer = ReloadTracer::new(
-        opentelemetry::sdk::trace::TracerProvider::default().versioned_tracer("noop", None, None),
+        opentelemetry::sdk::trace::TracerProvider::default().versioned_tracer(
+            "noop",
+            None::<String>,
+            None::<String>,
+            None,
+        ),
     );
     let opentelemetry_layer = tracing_opentelemetry::layer().with_tracer(hot_tracer.clone());
 

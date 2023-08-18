@@ -27,6 +27,7 @@ use opentelemetry::propagation::text_map_propagator::FieldIter;
 use opentelemetry::propagation::Extractor;
 use opentelemetry::propagation::Injector;
 use opentelemetry::propagation::TextMapPropagator;
+use opentelemetry::sdk::metrics::MeterProvider;
 use opentelemetry::sdk::propagation::TextMapCompositePropagator;
 use opentelemetry::sdk::trace::Builder;
 use opentelemetry::trace::SpanContext;
@@ -81,7 +82,6 @@ use crate::plugins::telemetry::config::MetricsCommon;
 use crate::plugins::telemetry::config::Trace;
 use crate::plugins::telemetry::formatters::filter_metric_events;
 use crate::plugins::telemetry::formatters::FilteringFormatter;
-use crate::plugins::telemetry::metrics::aggregation::AggregateMeterProvider;
 use crate::plugins::telemetry::metrics::apollo::studio::SingleContextualizedStats;
 use crate::plugins::telemetry::metrics::apollo::studio::SinglePathErrorStats;
 use crate::plugins::telemetry::metrics::apollo::studio::SingleQueryLatencyStats;
@@ -91,7 +91,6 @@ use crate::plugins::telemetry::metrics::layer::MetricsLayer;
 use crate::plugins::telemetry::metrics::BasicMetrics;
 use crate::plugins::telemetry::metrics::MetricsBuilder;
 use crate::plugins::telemetry::metrics::MetricsConfigurator;
-use crate::plugins::telemetry::metrics::MetricsExporterHandle;
 use crate::plugins::telemetry::tracing::apollo_telemetry::decode_ftv1_trace;
 use crate::plugins::telemetry::tracing::apollo_telemetry::APOLLO_PRIVATE_OPERATION_SIGNATURE;
 use crate::plugins::telemetry::tracing::TracingConfigurator;
@@ -141,16 +140,12 @@ const DEFAULT_EXPOSE_TRACE_ID_HEADER: &str = "apollo-trace-id";
 pub(crate) struct Telemetry {
     config: Arc<config::Conf>,
     metrics: BasicMetrics,
-    // Do not remove _metrics_exporters. Metrics will not be exported if it is removed.
-    // Typically the handles are a PushController but may be something else. Dropping the handle will
-    // shutdown exporter.
-    _metrics_exporters: Vec<MetricsExporterHandle>,
     custom_endpoints: MultiMap<ListenAddr, Endpoint>,
     apollo_metrics_sender: apollo_exporter::Sender,
     field_level_instrumentation_ratio: f64,
 
     tracer_provider: Option<opentelemetry::sdk::trace::TracerProvider>,
-    meter_provider: AggregateMeterProvider,
+    meter_provider: MeterProvider,
 }
 
 #[derive(Debug)]
@@ -220,7 +215,6 @@ impl Plugin for Telemetry {
         let meter_provider = metrics_builder.meter_provider();
         Ok(Telemetry {
             custom_endpoints: metrics_builder.custom_endpoints(),
-            _metrics_exporters: metrics_builder.exporters(),
             metrics: BasicMetrics::new(&meter_provider),
             apollo_metrics_sender: metrics_builder.apollo_metrics_provider(),
             field_level_instrumentation_ratio,
@@ -526,6 +520,7 @@ impl Telemetry {
             let tracer = tracer_provider.versioned_tracer(
                 GLOBAL_TRACER_NAME,
                 Some(env!("CARGO_PKG_VERSION")),
+                None::<String>,
                 None,
             );
             hot_tracer.reload(tracer);
@@ -829,15 +824,11 @@ impl Telemetry {
         };
 
         // http_requests_total - the total number of HTTP requests received
-        metrics
-            .http_requests_total
-            .add(&opentelemetry::Context::current(), 1, &metric_attrs);
+        metrics.http_requests_total.add(1, &metric_attrs);
 
-        metrics.http_requests_duration.record(
-            &opentelemetry::Context::current(),
-            request_duration.as_secs_f64(),
-            &metric_attrs,
-        );
+        metrics
+            .http_requests_duration
+            .record(request_duration.as_secs_f64(), &metric_attrs);
 
         res
     }
@@ -1059,11 +1050,7 @@ impl Telemetry {
                     );
                 }
 
-                metrics.http_requests_total.add(
-                    &opentelemetry::Context::current(),
-                    1,
-                    &metric_attrs,
-                );
+                metrics.http_requests_total.add(1, &metric_attrs);
             }
             Err(err) => {
                 metric_attrs.push(KeyValue::new("status", "500"));
@@ -1077,18 +1064,12 @@ impl Telemetry {
                     );
                 }
 
-                metrics.http_requests_total.add(
-                    &opentelemetry::Context::current(),
-                    1,
-                    &metric_attrs,
-                );
+                metrics.http_requests_total.add(1, &metric_attrs);
             }
         }
-        metrics.http_requests_duration.record(
-            &opentelemetry::Context::current(),
-            now.elapsed().as_secs_f64(),
-            &metric_attrs,
-        );
+        metrics
+            .http_requests_duration
+            .record(now.elapsed().as_secs_f64(), &metric_attrs);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1136,11 +1117,7 @@ impl Telemetry {
                     );
                 }
 
-                metrics.http_requests_total.add(
-                    &opentelemetry::Context::current(),
-                    1,
-                    &metric_attrs,
-                );
+                metrics.http_requests_total.add(1, &metric_attrs);
 
                 Err(e)
             }

@@ -21,7 +21,7 @@ use opentelemetry::trace::SpanId;
 use opentelemetry::trace::TraceError;
 use opentelemetry::Key;
 use opentelemetry::Value;
-use opentelemetry_semantic_conventions::trace::HTTP_METHOD;
+use opentelemetry_semantic_conventions::trace::HTTP_REQUEST_METHOD;
 use prost::Message;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
@@ -649,7 +649,7 @@ pub(crate) fn decode_ftv1_trace(string: &str) -> Option<proto::reports::Trace> {
 fn extract_http_data(span: &LightSpanData) -> Http {
     let method = match span
         .attributes
-        .get(&HTTP_METHOD)
+        .get(&HTTP_REQUEST_METHOD)
         .map(|data| data.as_str())
         .unwrap_or_default()
         .as_ref()
