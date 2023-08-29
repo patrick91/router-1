@@ -627,7 +627,7 @@ pub(crate) struct PlannerErrors(Arc<Vec<PlannerError>>);
 #[cfg(feature = "custom_to_graphql_error")]
 #[derive(Clone, Debug, Error, Serialize, Deserialize)]
 /// Container for planner setup errors
-pub struct PlannerErrors(Arc<Vec<PlannerError>>);
+pub struct PlannerErrors(pub Arc<Vec<PlannerError>>);
 
 impl std::fmt::Display for PlannerErrors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

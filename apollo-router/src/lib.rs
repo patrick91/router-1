@@ -99,9 +99,11 @@ pub use error::set_to_graphql_error;
 #[cfg(feature = "custom_to_graphql_error")]
 pub use error::FetchError;
 #[cfg(feature = "custom_to_graphql_error")]
-pub use error::RouterError;
+pub use error::{CacheResolverError, PlannerErrors, QueryPlannerError, RouterError};
 #[cfg(feature = "custom_to_graphql_error")]
 pub use json_ext::Path;
+#[cfg(feature = "custom_to_graphql_error")]
+pub use spec::operation_limits::OperationLimits;
 
 /// Not part of the public API
 #[doc(hidden)]
