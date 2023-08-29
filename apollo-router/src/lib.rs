@@ -99,6 +99,8 @@ pub use error::set_to_graphql_error;
 #[cfg(feature = "custom_to_graphql_error")]
 pub use error::FetchError;
 #[cfg(feature = "custom_to_graphql_error")]
+pub use error::RouterError;
+#[cfg(feature = "custom_to_graphql_error")]
 pub use json_ext::Path;
 
 /// Not part of the public API
