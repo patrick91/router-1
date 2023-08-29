@@ -369,6 +369,7 @@ pub enum RouterError {
     Planner(PlannerErrors),
 }
 
+#[cfg(not(feature = "custom_to_graphql_error"))]
 impl IntoGraphQLErrors for RouterError {
     fn into_graphql_errors(self) -> Result<Vec<Error>, Self> {
         match self {
@@ -463,6 +464,32 @@ impl IntoGraphQLErrors for RouterError {
                 Ok(errors)
             }
         }
+    }
+}
+
+#[cfg(feature = "custom_to_graphql_error")]
+static mut INTO_GRAPHQL_ERRORS: OnceLock<
+    Box<dyn Fn(RouterError) -> Result<Vec<Error>, RouterError> + 'static>,
+> = OnceLock::new();
+#[cfg(feature = "custom_to_graphql_error")]
+pub unsafe fn set_into_graphql_errors(
+    into_graphql_errors: impl Fn(RouterError) -> Result<Vec<Error>, RouterError> + 'static,
+) {
+    INTO_GRAPHQL_ERRORS
+        .set(Box::new(into_graphql_errors))
+        .map_err(|_| "into_graphql_errors was already set")
+        .unwrap();
+}
+
+#[cfg(feature = "custom_to_graphql_error")]
+impl IntoGraphQLErrors for RouterError {
+    fn into_graphql_errors(self) -> Result<Vec<Error>, Self> {
+        let callback = unsafe {
+            INTO_GRAPHQL_ERRORS
+                .get()
+                .expect("into_graphql_errors was not set")
+        };
+        callback(self)
     }
 }
 
