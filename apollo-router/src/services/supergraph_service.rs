@@ -37,7 +37,7 @@ use super::subgraph_service::SubgraphServiceFactory;
 use super::ExecutionServiceFactory;
 use super::QueryPlannerContent;
 use crate::context::OPERATION_NAME;
-use crate::error::CacheResolverError;
+use crate::error::{CacheResolverError, RouterError};
 use crate::graphql;
 use crate::graphql::IntoGraphQLErrors;
 use crate::graphql::Response;
@@ -183,7 +183,7 @@ async fn service_call(
     .await
     {
         Ok(resp) => resp,
-        Err(err) => match err.into_graphql_errors() {
+        Err(err) => match RouterError::CacheResolver(err).into_graphql_errors() {
             Ok(gql_errors) => {
                 return Ok(SupergraphResponse::builder()
                     .context(context)

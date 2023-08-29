@@ -343,20 +343,118 @@ impl From<QueryPlannerError> for FetchError {
 
 /// Error types for CacheResolver
 #[derive(Error, Debug, Display, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+#[non_exhaustive]
+pub(crate) enum RouterError {
+    /// Error types for CacheResolver
+    CacheResolver(CacheResolverError),
+    /// Error types for QueryPlanner
+    QueryPlanner(QueryPlannerError),
+    /// Container for planner setup errors
+    Planner(PlannerErrors),
+}
+impl IntoGraphQLErrors for RouterError {
+    fn into_graphql_errors(self) -> Result<Vec<Error>, Self> {
+        match self {
+            Self::CacheResolver(error) => {
+                let CacheResolverError::RetrievalError(retrieval_error) = error;
+                Self::QueryPlanner(retrieval_error.deref().clone())
+                    .into_graphql_errors()
+                    .map_err(|_err| {
+                        Self::CacheResolver(CacheResolverError::RetrievalError(retrieval_error))
+                    })
+            }
+            Self::QueryPlanner(planner_error) => match planner_error {
+                QueryPlannerError::SpecError(err) => {
+                    let gql_err = match err.custom_extension_details() {
+                        Some(extension_details) => Error::builder()
+                            .message(err.to_string())
+                            .extension_code(err.extension_code())
+                            .extensions(extension_details)
+                            .build(),
+                        None => Error::builder()
+                            .message(err.to_string())
+                            .extension_code(err.extension_code())
+                            .build(),
+                    };
+
+                    Ok(vec![gql_err])
+                }
+                QueryPlannerError::SchemaValidationErrors(errs) => {
+                    Self::Planner(errs).into_graphql_errors()
+                }
+                QueryPlannerError::PlanningErrors(planning_errors) => Ok(planning_errors
+                    .errors
+                    .iter()
+                    .map(|p_err| Error::from(p_err.clone()))
+                    .collect()),
+                QueryPlannerError::Introspection(introspection_error) => Ok(vec![Error::builder()
+                    .message(
+                        introspection_error
+                            .message
+                            .unwrap_or_else(|| "introspection error".to_string()),
+                    )
+                    .extension_code("INTROSPECTION_ERROR")
+                    .build()]),
+                QueryPlannerError::LimitExceeded(OperationLimits {
+                    depth,
+                    height,
+                    root_fields,
+                    aliases,
+                }) => {
+                    let mut errors = Vec::new();
+                    let mut build = |exceeded, code, message| {
+                        if exceeded {
+                            errors.push(
+                                Error::builder()
+                                    .message(message)
+                                    .extension_code(code)
+                                    .build(),
+                            )
+                        }
+                    };
+                    build(
+                        depth,
+                        "MAX_DEPTH_LIMIT",
+                        "Maximum depth limit exceeded in this operation",
+                    );
+                    build(
+                        height,
+                        "MAX_HEIGHT_LIMIT",
+                        "Maximum height (field count) limit exceeded in this operation",
+                    );
+                    build(
+                        root_fields,
+                        "MAX_ROOT_FIELDS_LIMIT",
+                        "Maximum root fields limit exceeded in this operation",
+                    );
+                    build(
+                        aliases,
+                        "MAX_ALIASES_LIMIT",
+                        "Maximum aliases limit exceeded in this operation",
+                    );
+                    Ok(errors)
+                }
+                err => Err(Self::QueryPlanner(err)),
+            },
+            Self::Planner(planner_errors) => {
+                // TODO: NO
+                let errors = planner_errors
+                    .0
+                    .iter()
+                    .map(|e| Error::from(e.clone()))
+                    .collect();
+                Ok(errors)
+            }
+        }
+    }
+}
+
+/// Error types for CacheResolver
+#[derive(Error, Debug, Display, Clone, Serialize, Deserialize)]
 pub(crate) enum CacheResolverError {
     /// value retrieval failed: {0}
     RetrievalError(Arc<QueryPlannerError>),
-}
-
-impl IntoGraphQLErrors for CacheResolverError {
-    fn into_graphql_errors(self) -> Result<Vec<Error>, Self> {
-        let CacheResolverError::RetrievalError(retrieval_error) = self;
-        retrieval_error
-            .deref()
-            .clone()
-            .into_graphql_errors()
-            .map_err(|_err| CacheResolverError::RetrievalError(retrieval_error))
-    }
 }
 
 impl From<QueryPlannerError> for CacheResolverError {
@@ -430,95 +528,9 @@ pub(crate) enum QueryPlannerError {
     Unauthorized(Vec<Path>),
 }
 
-impl IntoGraphQLErrors for QueryPlannerError {
-    fn into_graphql_errors(self) -> Result<Vec<Error>, Self> {
-        match self {
-            QueryPlannerError::SpecError(err) => {
-                let gql_err = match err.custom_extension_details() {
-                    Some(extension_details) => Error::builder()
-                        .message(err.to_string())
-                        .extension_code(err.extension_code())
-                        .extensions(extension_details)
-                        .build(),
-                    None => Error::builder()
-                        .message(err.to_string())
-                        .extension_code(err.extension_code())
-                        .build(),
-                };
-
-                Ok(vec![gql_err])
-            }
-            QueryPlannerError::SchemaValidationErrors(errs) => errs
-                .into_graphql_errors()
-                .map_err(QueryPlannerError::SchemaValidationErrors),
-            QueryPlannerError::PlanningErrors(planning_errors) => Ok(planning_errors
-                .errors
-                .iter()
-                .map(|p_err| Error::from(p_err.clone()))
-                .collect()),
-            QueryPlannerError::Introspection(introspection_error) => Ok(vec![Error::builder()
-                .message(
-                    introspection_error
-                        .message
-                        .unwrap_or_else(|| "introspection error".to_string()),
-                )
-                .extension_code("INTROSPECTION_ERROR")
-                .build()]),
-            QueryPlannerError::LimitExceeded(OperationLimits {
-                depth,
-                height,
-                root_fields,
-                aliases,
-            }) => {
-                let mut errors = Vec::new();
-                let mut build = |exceeded, code, message| {
-                    if exceeded {
-                        errors.push(
-                            Error::builder()
-                                .message(message)
-                                .extension_code(code)
-                                .build(),
-                        )
-                    }
-                };
-                build(
-                    depth,
-                    "MAX_DEPTH_LIMIT",
-                    "Maximum depth limit exceeded in this operation",
-                );
-                build(
-                    height,
-                    "MAX_HEIGHT_LIMIT",
-                    "Maximum height (field count) limit exceeded in this operation",
-                );
-                build(
-                    root_fields,
-                    "MAX_ROOT_FIELDS_LIMIT",
-                    "Maximum root fields limit exceeded in this operation",
-                );
-                build(
-                    aliases,
-                    "MAX_ALIASES_LIMIT",
-                    "Maximum aliases limit exceeded in this operation",
-                );
-                Ok(errors)
-            }
-            err => Err(err),
-        }
-    }
-}
-
 #[derive(Clone, Debug, Error, Serialize, Deserialize)]
 /// Container for planner setup errors
 pub(crate) struct PlannerErrors(Arc<Vec<PlannerError>>);
-
-impl IntoGraphQLErrors for PlannerErrors {
-    fn into_graphql_errors(self) -> Result<Vec<Error>, Self> {
-        let errors = self.0.iter().map(|e| Error::from(e.clone())).collect();
-
-        Ok(errors)
-    }
-}
 
 impl std::fmt::Display for PlannerErrors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
