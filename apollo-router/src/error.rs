@@ -342,6 +342,7 @@ impl From<QueryPlannerError> for FetchError {
 }
 
 /// Error types for CacheResolver
+#[cfg(not(feature = "custom_to_graphql_error"))]
 #[derive(Error, Debug, Display, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 #[non_exhaustive]
@@ -353,6 +354,21 @@ pub(crate) enum RouterError {
     /// Container for planner setup errors
     Planner(PlannerErrors),
 }
+
+/// Error types for CacheResolver
+#[cfg(feature = "custom_to_graphql_error")]
+#[derive(Error, Debug, Display, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+#[non_exhaustive]
+pub enum RouterError {
+    /// Error types for CacheResolver
+    CacheResolver(CacheResolverError),
+    /// Error types for QueryPlanner
+    QueryPlanner(QueryPlannerError),
+    /// Container for planner setup errors
+    Planner(PlannerErrors),
+}
+
 impl IntoGraphQLErrors for RouterError {
     fn into_graphql_errors(self) -> Result<Vec<Error>, Self> {
         match self {
@@ -451,8 +467,17 @@ impl IntoGraphQLErrors for RouterError {
 }
 
 /// Error types for CacheResolver
+#[cfg(not(feature = "custom_to_graphql_error"))]
 #[derive(Error, Debug, Display, Clone, Serialize, Deserialize)]
 pub(crate) enum CacheResolverError {
+    /// value retrieval failed: {0}
+    RetrievalError(Arc<QueryPlannerError>),
+}
+
+/// Error types for CacheResolver
+#[cfg(feature = "custom_to_graphql_error")]
+#[derive(Error, Debug, Display, Clone, Serialize, Deserialize)]
+pub enum CacheResolverError {
     /// value retrieval failed: {0}
     RetrievalError(Arc<QueryPlannerError>),
 }
@@ -492,6 +517,7 @@ impl From<router_bridge::error::Error> for ServiceBuildError {
 }
 
 /// Error types for QueryPlanner
+#[cfg(not(feature = "custom_to_graphql_error"))]
 #[derive(Error, Debug, Display, Clone, Serialize, Deserialize)]
 pub(crate) enum QueryPlannerError {
     /// couldn't instantiate query planner; invalid schema: {0}
@@ -528,9 +554,53 @@ pub(crate) enum QueryPlannerError {
     Unauthorized(Vec<Path>),
 }
 
+/// Error types for QueryPlanner
+#[cfg(feature = "custom_to_graphql_error")]
+#[derive(Error, Debug, Display, Clone, Serialize, Deserialize)]
+pub enum QueryPlannerError {
+    /// couldn't instantiate query planner; invalid schema: {0}
+    SchemaValidationErrors(PlannerErrors),
+
+    /// couldn't plan query: {0}
+    PlanningErrors(PlanErrors),
+
+    /// query planning panicked: {0}
+    JoinError(String),
+
+    /// Cache resolution failed: {0}
+    CacheResolverError(Arc<CacheResolverError>),
+
+    /// empty query plan. This often means an unhandled Introspection query was sent. Please file an issue to apollographql/router.
+    EmptyPlan(UsageReporting), // usage_reporting_signature
+
+    /// unhandled planner result
+    UnhandledPlannerResult,
+
+    /// router bridge error: {0}
+    RouterBridgeError(router_bridge::error::Error),
+
+    /// spec error: {0}
+    SpecError(SpecError),
+
+    /// introspection error: {0}
+    Introspection(IntrospectionError),
+
+    /// complexity limit exceeded
+    LimitExceeded(OperationLimits<bool>),
+
+    /// Unauthorized field or type
+    Unauthorized(Vec<Path>),
+}
+
+#[cfg(not(feature = "custom_to_graphql_error"))]
 #[derive(Clone, Debug, Error, Serialize, Deserialize)]
 /// Container for planner setup errors
 pub(crate) struct PlannerErrors(Arc<Vec<PlannerError>>);
+
+#[cfg(feature = "custom_to_graphql_error")]
+#[derive(Clone, Debug, Error, Serialize, Deserialize)]
+/// Container for planner setup errors
+pub struct PlannerErrors(Arc<Vec<PlannerError>>);
 
 impl std::fmt::Display for PlannerErrors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
