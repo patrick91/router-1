@@ -93,6 +93,8 @@ pub use crate::test_harness::TestHarness;
 pub use crate::uplink::UplinkConfig;
 
 #[cfg(feature = "custom_to_graphql_error")]
+pub use error::set_into_graphql_errors;
+#[cfg(feature = "custom_to_graphql_error")]
 pub use error::set_to_graphql_error;
 #[cfg(feature = "custom_to_graphql_error")]
 pub use error::FetchError;
