@@ -696,6 +696,7 @@ impl From<QueryPlannerError> for Response {
 }
 
 /// The payload if the plan_worker invocation failed
+#[cfg(not(feature = "custom_to_graphql_error"))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct PlanErrors {
     /// The errors the plan_worker invocation failed with
@@ -703,6 +704,17 @@ pub(crate) struct PlanErrors {
     /// Usage reporting related data such as the
     /// operation signature and referenced fields
     pub(crate) usage_reporting: UsageReporting,
+}
+
+/// The payload if the plan_worker invocation failed
+#[cfg(feature = "custom_to_graphql_error")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanErrors {
+    /// The errors the plan_worker invocation failed with
+    pub errors: Arc<Vec<router_bridge::planner::PlanError>>,
+    /// Usage reporting related data such as the
+    /// operation signature and referenced fields
+    pub usage_reporting: UsageReporting,
 }
 
 impl From<router_bridge::planner::PlanErrors> for PlanErrors {
